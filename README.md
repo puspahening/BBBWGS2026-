@@ -5,8 +5,7 @@
 ![Organism](https://img.shields.io/badge/organism-C.%20albicans-purple)
 ![Status](https://img.shields.io/badge/status-complete-brightgreen)
 
-Pipeline analisis Whole Genome Sequencing (WGS) *Candida albicans* untuk identifikasi varian resistansi antifungal, dikembangkan sebagai bagian dari praktikum mata kuliah **Bioinformatika**, Program Studi Bioteknologi, Universitas Diponegoro.
-
+Pipeline analisis Whole Genome Sequencing (WGS) *Candida albicans* untuk identifikasi varian resistansi antifungal
 ---
 
 ## Dataset
@@ -118,10 +117,12 @@ bash mission04/run_mission04.sh
 
 ## Referensi
 
-1. Perlin DS et al. (2015). The fungal cell wall and glucan synthase FKS1. *J Clin Microbiol*, 53, 1037-1044.
-2. Pappas PG et al. (2018). Invasive candidiasis. *Nat Rev Dis Primers*, 4, 18026.
-3. Weil T et al. (2017). Adaptive mistranslation accelerates fluconazole resistance. *mSphere*, 2, e00167-17.
+1. Flowers SA, Colón B, Whaley SG, Schuler MA, Rogers PD (2015). Contribution of clinically derived mutations in ERG11 to azole resistance in Candida albicans. Antimicrobial Agents and Chemotherapy, 59(1), 450–460. DOI: 10.1128/AAC.03470-14 
+2. Jones T, Federspiel NA, Chibana H, Dungan J, Kalman S, Magee BB, Newport G, Thorstenson YR, Agabian N, Magee PT, Davis RW, Scherer S (2004). The diploid genome sequence of Candida albicans. Proceedings of the National Academy of Sciences, 101(19), 7329–7334. DOI: 10.1073/pnas.0401648101 
+3. Mahdizade Ari AH, Hoseinnejad A, Ghazanfari M, Boozhmehrani MJ, Bahreiny SS, Abastabar M, Galbo R, Giuffrè L, Haghani I, Romeo O (2024). The TAC1 Gene in Candida albicans: Structure, Function, and Role in Azole Resistance: A Mini-Review. Microbial Drug Resistance, 30(7), 288–296. DOI: 10.1089/mdr.2023.0334 
+4. National Center for Biotechnology Information (NCBI). Candida albicans SC5314 genome assembly ASM18296v3, RefSeq accession: GCF_000182965.3. Available at: https://www.ncbi.nlm.nih.gov/datasets/genome/GCF_000182965.3/ 
+5. Ruiz-Baca E, Arredondo-Sánchez RI, Corral-Pérez K, López-Rodríguez A, Meneses-Morales I, Ayala-García VM, Martínez-Rocha AL (2021). Molecular Mechanisms of Resistance to Antifungals in Candida albicans. Dalam: Candida and Candidiasis. IntechOpen. DOI: 10.5772/intechopen.95108
 
 ---
 
-*Puspa Hening, S.Pd., M.Biotech. — Bioteknologi UNDIP*
+*Puspa Hening*
