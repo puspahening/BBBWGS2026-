@@ -56,17 +56,6 @@ Region ini wajib dieksklusi menggunakan `bcftools view --targets "^supercont4.1:
 
 ---
 
-## Missense/Silent Ratio = 3.57
-
-| Ratio | Interpretasi |
-|---|---|
-| ~2.0–2.5 | Normal — tekanan seleksi netral |
-| **3.57** | **Tinggi — tekanan seleksi positif** |
-| >5.0 | Sangat tinggi — mungkin artefak |
-
-Ratio 3.57 pada FL22-passaged menunjukkan banyak mutasi non-synonymous yang lolos seleksi karena menguntungkan di bawah tekanan fluconazole — konsisten dengan adaptasi aktif.
-
----
 
 ## Referensi
 
