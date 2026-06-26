@@ -1,20 +1,47 @@
 #!/bin/bash
 # ============================================================
 # MISSION 04 — Variant Calling & Annotation
-# Tools   : FreeBayes, bcftools, snpEff
+# Tools   : FreeBayes, bcftools, snpEff (custom database)
 # Input   : alignment_sorted.bam (dari Mission 03)
-# Output  : variants_annotated.vcf, variants_clean.vcf
+# Output  : variants_annotated.vcf
 #
-# CATATAN PENTING:
-# 1. C. albicans = DIPLOID → --ploidy 2 (bukan 1!)
+# CATATAN PENTING — DIBACA DULU SEBELUM MENJALANKAN:
+#
+# 1. C. albicans = DIPLOID -> --ploidy 2 (bukan 1!)
 #    GT=0/1 heterozygous, GT=1/1 homozygous (LOH)
-# 2. snpEff database "Candida_albicans_sc5314_gca_000784635"
-#    menggunakan nama kromosom "supercont4.X" — berbeda dari
-#    reference NCBI yang pakai "NC_032089.1" dst
-#    → wajib rename dengan chr_rename.txt sebelum anotasi
-# 3. snpEff wajib pakai -Xmx4g untuk cegah OutOfMemoryError
-# 4. Region supercont4.1:2700000-2800000 dieksklusi karena
-#    merupakan artefak repetitif (262k varian palsu)
+#
+# 2. SEMUA database snpEff publik untuk C. albicans (termasuk
+#    "Candida_albicans_sc5314_gca_000784635" dan
+#    "Candida_albicans_sc5314_gca_000784655") menggunakan assembly
+#    LAMA yang fragmented (38-77 scaffold/supercontig). Assembly ini
+#    TIDAK bisa dipetakan 1:1 ke reference modern 8-kromosom
+#    (GCF_000182965.3) yang dipakai untuk alignment di script ini.
+#    Mencoba bcftools annotate --rename-chrs akan menyebabkan
+#    ERROR_OUT_OF_CHROMOSOME_RANGE pada ribuan varian.
+#
+#    SOLUSI: script ini membangun database snpEff CUSTOM langsung
+#    dari reference.fna + GFF3 resmi NCBI -- assembly yang identik
+#    dengan yang dipakai alignment, sehingga tidak ada chr mismatch
+#    sama sekali dan tidak perlu file rename.
+#
+# 3. snpEff build memerlukan -noCheckCds -noCheckProtein karena
+#    file protein.fa/cds.fa terpisah tidak disediakan -- tanpa flag
+#    ini, build akan gagal di tahap validasi akhir meskipun
+#    snpEffectPredictor.bin (file yang sebenarnya dibutuhkan) sudah
+#    berhasil terbentuk.
+#
+# 4. snpEff ann WAJIB pakai -Xmx6g -- tanpa ini, snpEff mengalami
+#    java.lang.OutOfMemoryError saat memproses ~64,000 varian
+#    dengan anotasi yang padat (banyak transcript overlap per posisi).
+#
+# 5. KOORDINAT GEN TARGET RESISTANSI sudah diverifikasi langsung
+#    dari genes.gff (bukan estimasi literatur). Lihat tabel di
+#    bagian akhir script ini. Jangan mengasumsikan posisi gen dari
+#    sumber lain tanpa verifikasi ulang yang sama -- kesalahan
+#    koordinat (mengasumsikan FKS1 di posisi yang ternyata milik
+#    PUT3/RBT4/MEF2; mengasumsikan TAC1/ERG11 di Chr2/Chr4 padahal
+#    keduanya di Chr5) pernah terjadi dan baru terdeteksi setelah
+#    anotasi selesai.
 # ============================================================
 
 set -euo pipefail
@@ -30,12 +57,8 @@ cp ../mission03/alignment_sorted.bam .
 cp ../mission03/alignment_sorted.bam.bai .
 cp ../mission02/reference.fna .
 
-# chr_rename.txt disertakan di repo
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cp "$SCRIPT_DIR/chr_rename.txt" .
-
-# ── Variant Calling ──────────────────────────────────────────
-echo "[1/6] FreeBayes variant calling (--ploidy 2)..."
+# ---- Variant Calling ------------------------------------------------
+echo "[1/7] FreeBayes variant calling (--ploidy 2)..."
 freebayes \
   -f reference.fna \
   --min-mapping-quality 20 \
@@ -46,8 +69,8 @@ freebayes \
 
 echo "Raw variants: $(grep -v '^#' variants_raw.vcf | wc -l)"
 
-# ── Filtering ────────────────────────────────────────────────
-echo "[2/6] Filter (QUAL>=20, DP>=5)..."
+# ---- Filtering --------------------------------------------------------
+echo "[2/7] Filter (QUAL>=20, DP>=5)..."
 bcftools filter \
   -e 'QUAL < 20 || INFO/DP < 5' \
   variants_raw.vcf \
@@ -55,8 +78,8 @@ bcftools filter \
 
 echo "Filtered: $(grep -v '^#' variants_filtered.vcf | wc -l)"
 
-# ── Normalisasi ──────────────────────────────────────────────
-echo "[3/6] Normalisasi VCF..."
+# ---- Normalisasi -------------------------------------------------------
+echo "[3/7] Normalisasi VCF..."
 bcftools norm \
   -f reference.fna \
   -m- \
@@ -65,104 +88,98 @@ bcftools norm \
 
 echo "Normalized: $(grep -v '^#' variants_norm.vcf | wc -l)"
 
-# ── Rename kromosom ──────────────────────────────────────────
-echo "[4/6] Rename kromosom NC_XXXXXX → supercont4.X..."
-bcftools annotate \
-  --rename-chrs chr_rename.txt \
-  variants_norm.vcf \
-  -o variants_norm_renamed.vcf
+# ---- Build database snpEff custom --------------------------------------
+echo "[4/7] Build database snpEff custom dari reference + GFF3 NCBI..."
 
-echo "Kromosom setelah rename:"
-grep -v "^#" variants_norm_renamed.vcf | cut -f1 | sort | uniq | tr '\n' ' '
-echo ""
+SNPEFF_DATA_DIR=~/wgs_candida/snpeff_data
+mkdir -p "$SNPEFF_DATA_DIR/data/CaSC5314_custom"
+cd "$SNPEFF_DATA_DIR"
 
-# ── Anotasi snpEff ───────────────────────────────────────────
-# -Xmx4g wajib — tanpa ini snpEff crash OutOfMemoryError
-echo "[5/6] Anotasi snpEff (-Xmx4g)..."
-snpEff -Xmx4g ann -v \
+cp ../mission02/reference.fna data/CaSC5314_custom/sequences.fa
+
+if [ ! -f GCF_000182965.3_ASM18296v3_genomic.gff ]; then
+  wget -c "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/182/965/GCF_000182965.3_ASM18296v3/GCF_000182965.3_ASM18296v3_genomic.gff.gz"
+  gunzip GCF_000182965.3_ASM18296v3_genomic.gff.gz
+fi
+cp GCF_000182965.3_ASM18296v3_genomic.gff data/CaSC5314_custom/genes.gff
+
+# Setup config snpEff jika belum ada
+if [ ! -f snpEff.config ]; then
+  SNPEFF_INSTALL_DIR=$(dirname "$(readlink -f "$(which snpEff)")")
+  cp "$SNPEFF_INSTALL_DIR/snpEff.config" .
+  echo "" >> snpEff.config
+  echo "# Candida albicans SC5314 custom (GCF_000182965.3)" >> snpEff.config
+  echo "CaSC5314_custom.genome : Candida_albicans_SC5314_custom" >> snpEff.config
+fi
+
+# Build -- wajib -noCheckCds -noCheckProtein, lihat catatan di atas
+snpEff build -c snpEff.config -gff3 -noCheckCds -noCheckProtein -v CaSC5314_custom \
+  > build_log.txt 2>&1
+
+if [ -f "data/CaSC5314_custom/snpEffectPredictor.bin" ]; then
+  echo "Database custom berhasil dibangun."
+else
+  echo "GAGAL: snpEffectPredictor.bin tidak terbentuk. Cek build_log.txt"
+  exit 1
+fi
+
+cd ~/wgs_candida/mission04
+
+# ---- Anotasi snpEff dengan database custom -----------------------------
+echo "[5/7] Anotasi snpEff (database custom, -Xmx6g)..."
+snpEff -Xmx6g ann -v \
+  -c "$SNPEFF_DATA_DIR/snpEff.config" \
   -stats snpEff_summary.html \
   -csvStats snpEff_summary.csv \
-  Candida_albicans_sc5314_gca_000784635 \
-  variants_norm_renamed.vcf > variants_annotated.vcf
+  CaSC5314_custom \
+  variants_norm.vcf > variants_annotated.vcf 2> snpeff_log.txt
 
-# ── Bersihkan region anomali ─────────────────────────────────
-# supercont4.1:2700000-2800000 mengandung 262k varian artefak
-echo "[6/6] Eksklusi region repetitif anomali..."
-bcftools view variants_annotated.vcf \
-  --targets "^supercont4.1:2700000-2800000" \
-  -o variants_clean.vcf
+# Verifikasi tidak ada error pemrosesan VCF (genome-build stats di
+# bagian akhir log boleh diabaikan -- itu bukan error pemrosesan VCF)
+if grep -q "ERROR_OUT_OF_CHROMOSOME_RANGE\|ERROR_CHROMOSOME_NOT_FOUND" snpeff_log.txt; then
+  echo "PERINGATAN: terdeteksi chromosome mismatch error -- cek snpeff_log.txt"
+else
+  echo "Anotasi bersih: tidak ada chromosome mismatch error."
+fi
 
-# ── Statistik ────────────────────────────────────────────────
+# ---- Statistik ----------------------------------------------------------
 echo ""
 echo "======================================"
 echo " VARIANT SUMMARY"
 echo "======================================"
-echo "Raw          : $(grep -v '^#' variants_raw.vcf | wc -l)"
-echo "Filtered     : $(grep -v '^#' variants_filtered.vcf | wc -l)"
-echo "Normalized   : $(grep -v '^#' variants_norm.vcf | wc -l)"
-echo "Clean (final): $(grep -v '^#' variants_clean.vcf | wc -l)"
-echo "Missense     : $(grep -v '^#' variants_annotated.vcf | grep 'missense_variant' | wc -l)"
-echo "Synonymous   : $(grep -v '^#' variants_annotated.vcf | grep 'synonymous_variant' | wc -l)"
-echo "Stop gained  : $(grep -v '^#' variants_annotated.vcf | grep 'stop_gained' | wc -l)"
+echo "Raw        : $(grep -v '^#' variants_raw.vcf | wc -l)"
+echo "Filtered   : $(grep -v '^#' variants_filtered.vcf | wc -l)"
+echo "Normalized : $(grep -v '^#' variants_norm.vcf | wc -l)"
+echo "Missense   : $(grep -v '^#' variants_annotated.vcf | grep -c 'missense_variant')"
+echo "Synonymous : $(grep -v '^#' variants_annotated.vcf | grep -c 'synonymous_variant')"
+echo "Stop gained: $(grep -v '^#' variants_annotated.vcf | grep -c 'stop_gained')"
 
-# ── Analisis Gen Resistansi ──────────────────────────────────
+# ---- [6/7] Koordinat gen target resistansi -- TERVERIFIKASI -------------
+# Koordinat berikut diverifikasi langsung dari genes.gff dengan:
+#   grep -i "gene=<SYMBOL>" data/CaSC5314_custom/genes.gff
+# JANGAN mengganti koordinat ini dengan estimasi dari sumber lain
+# tanpa verifikasi ulang yang sama.
 echo ""
 echo "======================================"
-echo " ANTIFUNGAL RESISTANCE PROFILE"
+echo " ANTIFUNGAL RESISTANCE -- KOORDINAT TERVERIFIKASI"
 echo "======================================"
+echo "Gen        Symbol di GFF   Lokasi                          GeneID"
+echo "GSC1/FKS1  GSC1            NC_032089.1:505,969-511,662      3636794"
+echo "ERG11      ERG11           NC_032093.1:148,115-149,701      3641571"
+echo "TAC1       TAC1            NC_032093.1:416,400-419,345      3643755"
 
 echo ""
-echo "--- FKS1 Hotspot HS1 (NC_032089.1:1496800-1497200) ---"
-grep -v "^#" variants_norm.vcf | \
-  awk '$1=="NC_032089.1" && $2>=1496800 && $2<=1497200' | \
-  cut -f1,2,4,5,6,10
+echo "--- GSC1/FKS1 (echinocandin target) -- Chr1 ---"
+grep -v "^#" variants_annotated.vcf | \
+  awk '$1=="NC_032089.1" && $2>=505969 && $2<=511662' | wc -l
 
-echo ""
-echo "--- TAC1 region (NC_032090.1:238000-242000) ---"
-grep -v "^#" variants_norm.vcf | \
-  awk '$1=="NC_032090.1" && $2>=238000 && $2<=242000' | \
-  cut -f1,2,4,5,6 | head -10
+echo "--- ERG11 (azole target) -- Chr5 ---"
+grep -v "^#" variants_annotated.vcf | \
+  awk '$1=="NC_032093.1" && $2>=148115 && $2<=149701' | wc -l
 
-echo ""
-echo "--- ERG11 region (NC_032092.1:1800000-1950000) ---"
-COUNT=$(grep -v "^#" variants_norm.vcf | \
-  awk '$1=="NC_032092.1" && $2>=1800000 && $2<=1950000' | wc -l)
-if [ "$COUNT" -eq 0 ]; then
-  echo "  Tidak ada varian terdeteksi di region target"
-else
-  grep -v "^#" variants_norm.vcf | \
-    awk '$1=="NC_032092.1" && $2>=1800000 && $2<=1950000' | \
-    cut -f1,2,4,5,6 | head -10
-fi
-
-# ── Simpan ringkasan ─────────────────────────────────────────
-mkdir -p ~/wgs_candida/results
-{
-  echo "=== WGS C. albicans FL22-passaged — RESULTS ==="
-  echo "Sample    : SRR5876982"
-  echo "Reference : SC5314 (GCF_000182965.3)"
-  echo "Ploidy    : DIPLOID (--ploidy 2)"
-  echo "Date      : $(date)"
-  echo ""
-  echo "=== QC SUMMARY ==="
-  echo "Raw reads      : 3,317,159"
-  echo "After trimming : 2,923,126 (88%)"
-  echo "Mapped         : 94.90%"
-  echo "Mean depth     : 38.17x"
-  echo ""
-  echo "=== VARIANT COUNTS ==="
-  echo "Raw        : $(grep -v '^#' variants_raw.vcf | wc -l)"
-  echo "Filtered   : $(grep -v '^#' variants_filtered.vcf | wc -l)"
-  echo "Clean      : $(grep -v '^#' variants_clean.vcf | wc -l)"
-  echo "Missense   : $(grep -v '^#' variants_annotated.vcf | grep 'missense_variant' | wc -l)"
-  echo "Stop gained: $(grep -v '^#' variants_annotated.vcf | grep 'stop_gained' | wc -l)"
-  echo "M/S ratio  : 3.57"
-  echo ""
-  echo "=== RESISTANCE PROFILE ==="
-  echo "FKS1 HS1 : 3 heterozygous variants — kandidat S645P (TTG→CTA)"
-  echo "TAC1     : 14 variants di region"
-  echo "ERG11    : Tidak terdeteksi di region target"
-} > ~/wgs_candida/results/results_summary.txt
+echo "--- TAC1 (efflux regulator) -- Chr5 ---"
+grep -v "^#" variants_annotated.vcf | \
+  awk '$1=="NC_032093.1" && $2>=416400 && $2<=419345' | wc -l
 
 echo ""
 echo "======================================"
@@ -170,8 +187,10 @@ echo " MISSION 04 SELESAI"
 echo "======================================"
 echo "Output utama :"
 echo "  - variants_annotated.vcf"
-echo "  - variants_clean.vcf"
 echo "  - snpEff_summary.html"
-echo "  - ~/wgs_candida/results/results_summary.txt"
 echo ""
 echo "Buka laporan: explorer.exe snpEff_summary.html"
+echo ""
+echo "PENTING: Sebelum menafsirkan gen resistansi APAPUN selain"
+echo "ketiga gen di atas, verifikasi koordinatnya terlebih dahulu:"
+echo '  grep -i "gene=NAMA_GEN" ~/wgs_candida/snpeff_data/data/CaSC5314_custom/genes.gff'
