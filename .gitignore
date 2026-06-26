@@ -1,0 +1,31 @@
+# File data besar
+*.fastq
+*.fastq.gz
+*.sam
+*.bam
+*.bam.bai
+*.fna
+*.fna.gz
+*.fna.amb
+*.fna.ann
+*.fna.bwt
+*.fna.pac
+*.fna.sa
+*.fai
+*.sra
+
+# VCF intermediate
+variants_raw.vcf
+variants_filtered.vcf
+variants_norm.vcf
+variants_norm_renamed.vcf
+
+# snpEff cache
+data/
+__pycache__/
+.DS_Store
+
+# Tetap track
+!variants_annotated.vcf
+!variants_clean.vcf
+!results/.gitkeep
