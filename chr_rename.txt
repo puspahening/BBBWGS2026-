@@ -1,8 +1,0 @@
-NC_032089.1	supercont4.1
-NC_032090.1	supercont4.6
-NC_032091.1	supercont4.12
-NC_032092.1	supercont4.23
-NC_032093.1	supercont4.28
-NC_032094.1	supercont4.34
-NC_032095.1	supercont4.32
-NC_032096.1	supercont4.37
